@@ -1,4 +1,4 @@
-# 🎙️ 远程呼唤 (Remote Caller) - 小爱音箱趣味互动插件
+# <img src="https://raw.githubusercontent.com/birdstudy-nj/songloft-remote-caller/refs/heads/main/static/icon.svg" width="48" height="48" /> 远程呼唤 (Remote Caller) - 小爱音箱趣味互动插件 远程呼唤 (Remote Caller) - 小爱音箱趣味互动插件
 
 “远程呼唤”是一个轻量级、跨平台的智能音箱 Web 插件。它允许你在手机或电脑上，通过原生级流畅的界面，向家中的「小爱音箱」发送**原声语音**或**小爱 TTS 播报**。
 
