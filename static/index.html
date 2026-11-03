@@ -1,1 +1,1154 @@
-tt
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>远程呼唤</title>
+    <link rel="icon" href="static/icon.svg" type="image/svg+xml">
+    <style>
+        /* ================= 基础与无滚动自适应 ================= */
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background: var(--md-surface);
+            font-family: system-ui, sans-serif;
+            overflow: hidden;
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+        }
+
+        .remote-caller-app {
+            max-width: 480px;
+            margin: 0 auto;
+            height: 100%;
+            padding: 0 16px 2vh 16px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 2vh;
+            box-sizing: border-box;
+            transition: padding-bottom 0.3s;
+        }
+
+        html.is-iframe .bottom-actions {
+            padding-bottom: max(2vh) !important;
+        }
+
+        .btn {
+            font-size: clamp(14px, 4vw, 16px);
+            font-weight: bold;
+            border-radius: 24px;
+            padding: 0 12px;
+            height: clamp(36px, 6vh, 48px);
+            border: none;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            white-space: nowrap;
+            transition: transform 0.15s, background-color 0.2s, color 0.2s, box-shadow 0.15s;
+        }
+        .btn:active { transform: scale(0.95); }
+        .btn-filled { background: var(--md-primary); color: var(--md-on-primary); box-shadow: 0 4px 10px rgba(65, 95, 145, 0.4); }
+        .btn-outlined { background: transparent; color: var(--md-primary); border: 2px solid var(--md-primary); }
+        .panel-hidden { display: none !important; }
+
+        /* ================= 1. 严格单设备轮播 ================= */
+        .carousel-container {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            margin-top: 1vh;
+        }
+
+        .nav-btn {
+            position: absolute;
+            z-index: 10;
+            background: transparent;
+            border: none;
+            color: var(--md-on-surface-variant);
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            height: 100%;
+            width: 40px;
+        }
+        .nav-btn .material-symbols-outlined { font-size: clamp(32px, 8vw, 48px); font-weight: 300; }
+        .nav-btn:active .material-symbols-outlined { transform: scale(0.85); }
+
+        .nav-btn.prev { left: 10px; animation: pulse-left 2s infinite ease-in-out; }
+        .nav-btn.next { right: 10px; animation: pulse-right 2s infinite ease-in-out; }
+
+        @keyframes pulse-left {
+            0%, 100% { transform: translateX(0); color: var(--md-on-surface-variant); }
+            50% { transform: translateX(-6px); color: var(--md-primary); }
+        }
+        @keyframes pulse-right {
+            0%, 100% { transform: translateX(0); color: var(--md-on-surface-variant); }
+            50% { transform: translateX(6px); color: var(--md-primary); }
+        }
+
+        .carousel-container .sound-wave {
+            position: absolute;
+            top: 50%;
+            width: clamp(20px, 8vmin, 40px);
+            height: clamp(50px, 15vh, 100px);
+            border: clamp(3px, 1vmin, 6px) solid transparent;
+            border-radius: 50%;
+            transform: translateY(-50%);
+            pointer-events: none;
+            z-index: 5;
+            opacity: 0;
+        }
+        .carousel-container.playing .sound-wave {
+            animation: emit-sound 0.7s infinite linear;
+        }
+        .carousel-container .sound-wave.left {
+            right: calc(50% + clamp(70px, 20vmin, 90px));
+            border-left-color: var(--md-primary);
+        }
+        .carousel-container .sound-wave.right {
+            left: calc(50% + clamp(70px, 20vmin, 90px));
+            border-right-color: var(--md-primary);
+        }
+
+        @keyframes emit-sound {
+            0% { transform: translateY(-50%) scale(0.5); opacity: 1; border-width: 8px; }
+            100% { transform: translateY(-50%) scale(1.5); opacity: 0; border-width: 2px; }
+        }
+
+        .speaker-scroll-row {
+            position: relative;
+            width: clamp(140px, 40vmin, 180px);
+            display: flex;
+            gap: 24px;
+            overflow-x: auto;
+            scroll-snap-type: x mandatory;
+            scrollbar-width: none;
+            border-radius: 24px;
+            padding: 2vh 0;
+        }
+        .speaker-scroll-row::-webkit-scrollbar { display: none; }
+
+        .speaker-item {
+            width: 100%;
+            height: clamp(160px, 35vh, 250px);
+            flex-shrink: 0;
+            scroll-snap-align: center;
+            position: relative;
+            background: linear-gradient(135deg, #4a4a4a, #111);
+            border: 4px solid #666;
+            box-sizing: border-box;
+            border-radius: 24px;
+            box-shadow: inset 4px 4px 10px rgba(255,255,255,0.1), 0 4px 10px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            opacity: 1;
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+        .speaker-item::before {
+            content: '';
+            position: absolute;
+            inset: 8px;
+            border-radius: 12px;
+            background: radial-gradient(#000 40%, transparent 40%);
+            background-size: 10px 10px;
+            opacity: 0.7;
+            pointer-events: none;
+        }
+        .speaker-item .name-label {
+            position: relative;
+            z-index: 2;
+            background: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: clamp(14px, 4vmin, 18px);
+            font-weight: 900;
+            letter-spacing: 1px;
+            border: 2px solid #444;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.6);
+            text-align: center;
+            max-width: 85%;
+            word-break: break-word;
+            overflow-wrap: break-word;
+            transition: background 0.3s, border-color 0.3s;
+        }
+
+        .speaker-item.center:not(.offline) {
+            border-color: var(--md-primary);
+            box-shadow: inset 4px 4px 10px rgba(255,255,255,0.2), 0 16px 24px rgba(65, 95, 145, 0.6);
+        }
+        .speaker-item.center:not(.offline) .name-label {
+            background: var(--md-primary);
+            border-color: #fff;
+        }
+
+        .speaker-item.offline {
+            filter: grayscale(1);
+            opacity: 0.45;
+        }
+        .speaker-item.offline.center {
+            border-color: #555;
+            opacity: 0.75;
+        }
+
+        .offline-badge {
+            position: relative;
+            z-index: 2;
+            background: #222;
+            color: #aaa;
+            font-size: clamp(12px, 3.5vw, 14px);
+            font-weight: bold;
+            padding: 4px 12px;
+            border-radius: 12px;
+            border: 1px solid #111;
+        }
+
+        /* ================= 2. 表单与控件 ================= */
+        .volume-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 0 8px;
+            box-sizing: border-box;
+            width: 100%;
+        }
+        .volume-row .material-symbols-outlined { color: var(--md-on-surface-variant); font-size: clamp(28px, 6vw, 36px); }
+
+        .vol-slider-wrap {
+            position: relative;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            height: 30px;
+        }
+        #volume-slider {
+            width: 100%;
+            height: clamp(8px, 2vh, 12px);
+            border-radius: 6px;
+            accent-color: var(--vol-color, #415F91);
+            margin: 0;
+        }
+
+        .vol-tooltip {
+            position: absolute;
+            top: -25px;
+            background: rgba(0, 0, 0, 0.75);
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: bold;
+            transform: translateX(-50%);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s, top 0.2s;
+            white-space: nowrap;
+            z-index: 20;
+        }
+        .vol-slider-wrap.sliding .vol-tooltip {
+            opacity: 1;
+            top: -32px;
+        }
+
+        .radio-group {
+            display: flex;
+            justify-content: center;
+            gap: 6vw;
+        }
+        .radio-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: clamp(14px, 4vw, 16px);
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .radio-label input[type="radio"] {
+            width: clamp(20px, 5vw, 24px);
+            height: clamp(20px, 5vw, 24px);
+            accent-color: var(--md-primary);
+            margin: 0;
+        }
+        .radio-label span {
+            color: var(--md-on-surface-variant);
+            opacity: 0.5;
+            transition: opacity 0.2s, color 0.2s;
+        }
+        .radio-label input[type="radio"]:checked + span {
+            color: var(--md-on-surface);
+            opacity: 1;
+        }
+
+        .text-field {
+            display: flex;
+            flex: 1;
+            min-height: 60px;
+            padding: 0 8px;
+            box-sizing: border-box;
+            width: 100%;
+        }
+        .text-field textarea {
+            width: 100%;
+            height: 100%;
+            box-sizing: border-box;
+            padding: 3vw;
+            font-size: clamp(14px, 4vw, 16px);
+            font-weight: bold;
+            border: 2px solid var(--md-outline-variant);
+            border-radius: 16px;
+            background: var(--md-surface-container-lowest);
+            color: var(--md-on-surface);
+            outline: none;
+            resize: none;
+            -webkit-user-select: auto;
+            user-select: auto;
+        }
+        .text-field textarea:focus { border-color: var(--md-primary); }
+        .text-field textarea::placeholder {
+            font-size: 13px;
+            font-weight: normal;
+            color: var(--md-on-surface-variant);
+        }
+
+        /* ================= 3. 弹性底部操作区 ================= */
+        .bottom-actions {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1.5vh;
+            width: 100%;
+        }
+
+        .action-row-top {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            min-height: 48px;
+        }
+
+        .delay-setting-wrap {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: clamp(14px, 4vw, 16px);
+            font-weight: bold;
+        }
+
+        /* ===== 自适应主题的下拉框 ===== */
+        .custom-select-container {
+            position: relative;
+            display: inline-block;
+        }
+        .custom-select-trigger {
+            padding: 4px 12px;
+            font-size: clamp(14px, 4.5vw, 18px);
+            font-weight: bold;
+            border: 2px solid var(--md-primary);
+            border-radius: 12px;
+            color: var(--md-primary);
+            background: transparent;
+            cursor: pointer;
+            min-width: 40px;
+            text-align: center;
+        }
+        .custom-select-options {
+            position: absolute;
+            bottom: 110%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--md-surface-container, var(--md-surface));
+            border: 1px solid var(--md-outline-variant);
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            display: none;
+            flex-direction: column;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 100;
+            min-width: 60px;
+        }
+        .custom-select-options.show {
+            display: flex;
+        }
+        .custom-option {
+            padding: 10px 16px;
+            text-align: center;
+            color: var(--md-on-surface);
+            font-weight: bold;
+            font-size: clamp(14px, 4vw, 16px);
+            cursor: pointer;
+            border-bottom: 1px solid var(--md-outline-variant);
+        }
+        .custom-option:last-child {
+            border-bottom: none;
+        }
+        .custom-option:active {
+            background: var(--md-primary);
+            color: var(--md-on-primary);
+        }
+        .custom-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 99;
+            display: none;
+        }
+        .custom-backdrop.show {
+            display: block;
+        }
+
+        .countdown-badge {
+            background: var(--md-error);
+            color: #fff;
+            padding: 8px 20px;
+            border-radius: 24px;
+            font-weight: 900;
+            font-size: clamp(14px, 4vw, 16px);
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            animation: pop-up 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        .countdown-badge:active { transform: scale(0.95); }
+
+        .action-row-bottom {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 4vw;
+            width: 100%;
+        }
+
+        .mic-wrapper {
+            position: relative;
+            width: clamp(80px, 25vmin, 140px);
+            height: clamp(80px, 25vmin, 140px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .mic-btn {
+            position: relative;
+            z-index: 2;
+            width: 80%;
+            height: 80%;
+            border-radius: 50%;
+            border: none;
+            background: var(--md-primary);
+            color: var(--md-on-primary);
+            box-shadow: 0 clamp(4px, 1vh, 8px) 0 #274777;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.1s, background 0.2s;
+        }
+        .mic-btn .material-symbols-outlined {
+            font-size: clamp(36px, 10vmin, 56px);
+            transition: transform 0.2s;
+        }
+
+        .mic-wrapper.recording .mic-btn {
+            transform: translateY(1vh) scale(0.95);
+            box-shadow: 0 0 0 #274777;
+            background: var(--md-error);
+        }
+        .mic-wrapper.recording .mic-btn .material-symbols-outlined {
+            transform: scale(1.15);
+        }
+
+        .ripple {
+            position: absolute;
+            top: 10%;
+            left: 10%;
+            width: 80%;
+            height: 80%;
+            border-radius: 50%;
+            background: var(--md-error);
+            opacity: 0;
+            z-index: 1;
+            pointer-events: none;
+        }
+        .mic-wrapper.recording .ripple { animation: ripple-expand 1.2s cubic-bezier(0.25, 0.8, 0.25, 1) infinite; }
+        .mic-wrapper.recording .ripple.delay-1 { animation-delay: 0.4s; }
+        .mic-wrapper.recording .ripple.delay-2 { animation-delay: 0.8s; }
+
+        /* ===== 非HTTPS限制蒙版 (透明背景纯文字) ===== */
+        .mic-overlay {
+            position: absolute;
+            inset: 10%;
+            background: transparent;
+            border-radius: 50%;
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            color: #ffffff;
+            text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.9);
+            font-size: clamp(10px, 3.5vw, 13px);
+            font-weight: bold;
+            line-height: 1.4;
+            cursor: not-allowed;
+            box-sizing: border-box;
+            padding: 5px;
+        }
+
+        .mic-hint {
+            color: var(--md-on-surface-variant);
+            font-size: 13px;
+            font-weight: normal;
+        }
+
+        @keyframes ripple-expand {
+            0% { transform: scale(1); opacity: 0.7; }
+            100% { transform: scale(2.5); opacity: 0; }
+        }
+        @keyframes pop-up {
+            from { transform: translateY(20px) scale(0.5); opacity: 0; }
+            to { transform: translateY(0) scale(1); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="remote-caller-app">
+        <!-- 1. 无限循环轮播区 -->
+        <div class="carousel-container" id="carousel-container">
+            <div class="sound-wave left"></div>
+            <div class="sound-wave right"></div>
+
+            <button class="nav-btn prev" id="btn-prev-speaker">
+                <span class="material-symbols-outlined">chevron_left</span>
+            </button>
+
+            <div class="speaker-scroll-row" id="device-list">
+                <span style="font-weight:bold; font-size:18px; margin: auto;">加载中...</span>
+            </div>
+
+            <button class="nav-btn next" id="btn-next-speaker">
+                <span class="material-symbols-outlined">chevron_right</span>
+            </button>
+        </div>
+
+        <!-- 2. 音量调节 -->
+        <div class="volume-row">
+            <span class="material-symbols-outlined">volume_mute</span>
+            <div class="vol-slider-wrap" id="vol-slider-wrap">
+                <div class="vol-tooltip" id="vol-tooltip">50%</div>
+                <input type="range" id="volume-slider" min="0" max="100" value="50">
+            </div>
+            <span class="material-symbols-outlined">volume_up</span>
+        </div>
+
+        <!-- 3. 单选按钮 -->
+        <div class="radio-group">
+            <label class="radio-label">
+                <input type="radio" name="send_mode" value="voice" checked> <span>本尊原音</span>
+            </label>
+            <label class="radio-label">
+                <input type="radio" name="send_mode" value="tts"> <span>小爱语音</span>
+            </label>
+        </div>
+
+        <!-- 4. 文字内容 -->
+        <div class="text-field">
+            <textarea id="tts-input" placeholder="🎙️ 按住底部麦克风说话，这里会同步显示文字..."></textarea>
+        </div>
+
+        <!-- 5. 底部操作区 -->
+        <div class="bottom-actions">
+            <!-- 顶行：配置区与倒计时的互斥切换 -->
+            <div class="action-row-top">
+                <div class="delay-setting-wrap" id="delay-config-wrap">
+                    <span>松手后</span>
+                    <div class="custom-select-container">
+                        <div class="custom-select-trigger" id="delay-trigger">2</div>
+                        <div class="custom-backdrop" id="delay-backdrop"></div>
+                        <div class="custom-select-options" id="delay-options">
+                            <div class="custom-option" data-value="0">不</div>
+                            <div class="custom-option" data-value="1">1</div>
+                            <div class="custom-option" data-value="2">2</div>
+                            <div class="custom-option" data-value="3">3</div>
+                            <div class="custom-option" data-value="4">4</div>
+                            <div class="custom-option" data-value="5">5</div>
+                            <div class="custom-option" data-value="6">6</div>
+                            <div class="custom-option" data-value="7">7</div>
+                            <div class="custom-option" data-value="8">8</div>
+                            <div class="custom-option" data-value="9">9</div>
+                            <div class="custom-option" data-value="10">10</div>
+                        </div>
+                    </div>
+                    <span id="delay-suffix">秒发送</span>
+                </div>
+                <div id="countdown-indicator" class="countdown-badge panel-hidden">
+                    <span class="material-symbols-outlined">cancel</span>
+                    <span id="countdown-text">取消发送 (2.0s)</span>
+                </div>
+            </div>
+
+            <div class="action-row-bottom">
+                <button id="btn-test" class="btn btn-outlined">
+                    <span class="material-symbols-outlined">play_arrow</span> 试听原音
+                </button>
+                <button id="btn-manual-send" class="btn btn-outlined panel-hidden">
+                    <span class="material-symbols-outlined">send</span> 手动发送
+                </button>
+                <button id="btn-resend" class="btn btn-outlined">
+                    <span class="material-symbols-outlined">replay</span> 再次发送
+                </button>
+            </div>
+
+            <div class="mic-wrapper" id="mic-wrapper">
+                <div class="ripple delay-0"></div>
+                <div class="ripple delay-1"></div>
+                <div class="ripple delay-2"></div>
+                <button id="btn-mic" class="mic-btn">
+                    <span class="material-symbols-outlined">mic</span>
+                </button>
+
+                <!-- 非HTTPS限制蒙版 (透明背景纯文字) -->
+                <div id="https-overlay" class="mic-overlay panel-hidden">
+                    <span>由于浏览器限制<br>需要 HTTPS<br>才能使用话筒</span>
+                </div>
+            </div>
+            <div class="mic-hint" id="mic-hint">按住说话</div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            if (window.parent !== window || new URLSearchParams(window.location.search).has('embed')) {
+                document.documentElement.classList.add('is-iframe');
+                if (/iPhone/i.test(navigator.userAgent)) {
+                    document.querySelector('.remote-caller-app').style.height = 'calc(100% - 10px)';
+                    document.querySelector('.remote-caller-app').style.paddingTop = '0px';
+                    document.body.style.height = window.innerHeight + 'px';
+                    const iosFixStyle = document.createElement('style');
+                    iosFixStyle.innerHTML = `
+                        .speaker-item { height: 220px !important; }
+                    `;
+                    document.head.appendChild(iosFixStyle);
+                }
+            }
+
+            const { getAuthToken, announce } = window.SongloftPlugin || {
+                getAuthToken: () => '', announce: () => {}
+            };
+
+            const isHttps = window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+            if (!isHttps) {
+                document.getElementById('https-overlay').classList.remove('panel-hidden');
+            }
+
+            // 预授权麦克风，成功后秒关
+            async function preloadMicPermission() {
+                if (!isHttps) return;
+                try {
+                    const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    tempStream.getTracks().forEach(track => track.stop());
+                } catch (err) {}
+            }
+            preloadMicPermission();
+
+            async function absoluteFetch(path, method = 'GET', body = null) {
+                const headers = { 'Content-Type': 'application/json' };
+                const token = getAuthToken();
+                if (token) headers['Authorization'] = 'Bearer ' + token;
+                const options = { method, headers };
+                if (body) options.body = JSON.stringify(body);
+
+                const res = await fetch(path, options);
+                let data;
+                try { data = await res.json(); } catch (e) { data = null; }
+                if (!res.ok) throw { status: res.status, payload: data };
+                return data;
+            }
+
+            let currentMode = localStorage.getItem('remote_caller_mode') || 'voice';
+            document.querySelectorAll('input[name="send_mode"]').forEach(radio => {
+                if (radio.value === currentMode) radio.checked = true;
+                radio.addEventListener('change', (e) => {
+                    currentMode = e.target.value;
+                    localStorage.setItem('remote_caller_mode', currentMode);
+                    cancelCountdown();
+                });
+            });
+
+            let isRecording = false;
+            let countdownTimer = null;
+            let countdownValue = 0;
+            let autoDelayValue = 2;
+            let lastValidVolume = 50;
+
+            let originalDevices = [];
+            let currentDeviceIndex = 0;
+            let virtualCurrentIndex = 0;
+            const CLONE_SETS = 7;
+            let selectedDevice = null;
+            let scrollTimeout = null;
+            let isProgrammaticScroll = false;
+
+            let recordedBlob = null;
+            let mediaRecorder = null;
+            let audioChunks = [];
+            let recognition = null;
+            let finalTranscript = '';
+            let originalStream = null;
+
+            const carouselContainer = document.getElementById('carousel-container');
+            const deviceList = document.getElementById('device-list');
+            const btnPrev = document.getElementById('btn-prev-speaker');
+            const btnNext = document.getElementById('btn-next-speaker');
+            const btnTest = document.getElementById('btn-test');
+            const btnManualSend = document.getElementById('btn-manual-send');
+            const btnResend = document.getElementById('btn-resend');
+            const micWrapper = document.getElementById('mic-wrapper');
+            const micHint = document.getElementById('mic-hint');
+            const delayConfigWrap = document.getElementById('delay-config-wrap');
+            const countdownBadge = document.getElementById('countdown-indicator');
+            const countdownText = document.getElementById('countdown-text');
+            const delayTrigger = document.getElementById('delay-trigger');
+            const delayBackdrop = document.getElementById('delay-backdrop');
+            const delayOptions = document.getElementById('delay-options');
+            const customOptions = document.querySelectorAll('.custom-option');
+            const delaySuffix = document.getElementById('delay-suffix');
+            const ttsInput = document.getElementById('tts-input');
+            const volumeSlider = document.getElementById('volume-slider');
+            const volSliderWrap = document.getElementById('vol-slider-wrap');
+            const volTooltip = document.getElementById('vol-tooltip');
+            const audioPlayer = new Audio();
+
+            function animateButtonFeedback(btn) {
+                btn.classList.remove('btn-outlined');
+                btn.classList.add('btn-filled');
+                btn.blur();
+                setTimeout(() => {
+                    btn.classList.remove('btn-filled');
+                    btn.classList.add('btn-outlined');
+                }, 1000);
+            }
+
+            function updateVolumeColor() {
+                const val = volumeSlider.value;
+                const hue = 210 - (val * 2.1);
+                volumeSlider.style.setProperty('--vol-color', `hsl(${hue}, 85%, 45%)`);
+                volTooltip.textContent = val + '%';
+                volTooltip.style.left = `${val}%`;
+                volTooltip.style.marginLeft = `calc(14px - ${val} * 0.28px)`;
+            }
+
+            volumeSlider.addEventListener('input', () => {
+                volSliderWrap.classList.add('sliding');
+                updateVolumeColor();
+            });
+
+            volumeSlider.addEventListener('change', async (e) => {
+                volSliderWrap.classList.remove('sliding');
+                if (!selectedDevice) return;
+                const vol = parseInt(e.target.value, 10);
+                if (vol > 80) {
+                    if (!confirm(`当前音量将调至 ${vol}%，声音可能会非常大。\n\n确定要调整到这么大吗？`)) {
+                        volumeSlider.value = lastValidVolume;
+                        updateVolumeColor();
+                        return;
+                    }
+                }
+                try {
+                    await absoluteFetch('/api/v1/jsplugin/miot/mina/volume', 'POST', {
+                        account_id: selectedDevice.aid,
+                        device_id: selectedDevice.did,
+                        volume: vol
+                    });
+                    lastValidVolume = vol;
+                    selectedDevice.volume = vol;
+                } catch (err) {
+                    announce("音量调节请求失败");
+                    volumeSlider.value = lastValidVolume;
+                    updateVolumeColor();
+                }
+            });
+
+            volumeSlider.addEventListener('pointerup', () => volSliderWrap.classList.remove('sliding'));
+            volumeSlider.addEventListener('pointerdown', () => volSliderWrap.classList.add('sliding'));
+            updateVolumeColor();
+
+            function toggleDelayDropdown() {
+                delayOptions.classList.toggle('show');
+                delayBackdrop.classList.toggle('show');
+            }
+
+            delayTrigger.addEventListener('click', toggleDelayDropdown);
+            delayBackdrop.addEventListener('click', toggleDelayDropdown);
+
+            customOptions.forEach(opt => {
+                opt.addEventListener('click', (e) => {
+                    autoDelayValue = parseInt(e.target.dataset.value, 10);
+                    if (autoDelayValue === 0) {
+                        delayTrigger.textContent = "不";
+                        delaySuffix.textContent = "自动发送";
+                        btnManualSend.classList.remove('panel-hidden');
+                        btnResend.classList.add('panel-hidden');
+                    } else {
+                        delayTrigger.textContent = autoDelayValue;
+                        delaySuffix.textContent = "秒发送";
+                        btnManualSend.classList.add('panel-hidden');
+                        btnResend.classList.remove('panel-hidden');
+                    }
+                    toggleDelayDropdown();
+                });
+            });
+
+            if (autoDelayValue === 0) {
+                btnManualSend.classList.remove('panel-hidden');
+                btnResend.classList.add('panel-hidden');
+            } else {
+                btnManualSend.classList.add('panel-hidden');
+                btnResend.classList.remove('panel-hidden');
+            }
+
+            function renderAllSpeakers() {
+                deviceList.innerHTML = '';
+                if (originalDevices.length === 0) {
+                    deviceList.innerHTML = '<span style="font-weight:bold; font-size:18px; margin:auto;">暂无设备</span>';
+                    selectedDevice = null;
+                    return;
+                }
+                let virtualDevices = originalDevices;
+                if (originalDevices.length > 1) {
+                    virtualDevices = Array(CLONE_SETS).fill(originalDevices).flat();
+                }
+                virtualDevices.forEach((device) => {
+                    const isOnline = device.presence === 'online';
+                    const btn = document.createElement('div');
+                    btn.className = `speaker-item ${isOnline ? '' : 'offline'}`;
+                    btn.innerHTML = `
+                        <div class="name-label">${device.name}</div>
+                        ${!isOnline ? '<div class="offline-badge">离线</div>' : ''}
+                    `;
+                    deviceList.appendChild(btn);
+                });
+                if (originalDevices.length > 1) {
+                    virtualCurrentIndex = Math.floor(CLONE_SETS / 2) * originalDevices.length + currentDeviceIndex;
+                } else {
+                    virtualCurrentIndex = 0;
+                }
+                updateCarouselSelection(true, false);
+            }
+
+            function updateCarouselSelection(doScroll = true, smooth = true) {
+                const items = deviceList.querySelectorAll('.speaker-item');
+                items.forEach((item, idx) => {
+                    if (idx === virtualCurrentIndex) {
+                        item.classList.add('center');
+                        selectedDevice = originalDevices[idx % originalDevices.length].presence === 'online' ? originalDevices[idx % originalDevices.length] : null;
+
+                        if (selectedDevice) {
+                            localStorage.setItem('remote_caller_last_device', selectedDevice.did);
+                            if (selectedDevice.volume !== undefined) {
+                                volumeSlider.value = selectedDevice.volume;
+                                lastValidVolume = selectedDevice.volume;
+                                updateVolumeColor();
+                            }
+                        }
+                        if (doScroll) {
+                            deviceList.scrollTo({
+                                left: item.offsetLeft - deviceList.clientWidth / 2 + item.clientWidth / 2,
+                                behavior: smooth ? 'smooth' : 'auto'
+                            });
+                        }
+                    } else {
+                        item.classList.remove('center');
+                    }
+                });
+            }
+
+            deviceList.addEventListener('scroll', () => {
+                if (originalDevices.length <= 1) return;
+                clearTimeout(scrollTimeout);
+                scrollTimeout = setTimeout(() => {
+                    if (!isProgrammaticScroll) {
+                        const center = deviceList.getBoundingClientRect().left + deviceList.clientWidth / 2;
+                        let minDiff = Infinity, closestIdx = virtualCurrentIndex;
+                        deviceList.querySelectorAll('.speaker-item').forEach((item, idx) => {
+                            const diff = Math.abs(item.getBoundingClientRect().left + item.clientWidth / 2 - center);
+                            if (diff < minDiff) { minDiff = diff; closestIdx = idx; }
+                        });
+                        if (virtualCurrentIndex !== closestIdx) {
+                            virtualCurrentIndex = closestIdx;
+                            currentDeviceIndex = virtualCurrentIndex % originalDevices.length;
+                            updateCarouselSelection(false);
+                        }
+                    }
+                    const len = originalDevices.length;
+                    if (virtualCurrentIndex < len || virtualCurrentIndex >= (CLONE_SETS - 1) * len) {
+                        virtualCurrentIndex = Math.floor(CLONE_SETS / 2) * len + currentDeviceIndex;
+                        updateCarouselSelection(true, false);
+                    }
+                }, 150);
+            });
+
+            btnPrev.addEventListener('click', () => {
+                if (originalDevices.length <= 1 || isProgrammaticScroll) return;
+                isProgrammaticScroll = true;
+                setTimeout(() => isProgrammaticScroll = false, 400);
+                virtualCurrentIndex++;
+                currentDeviceIndex = virtualCurrentIndex % originalDevices.length;
+                updateCarouselSelection(true, true);
+            });
+
+            btnNext.addEventListener('click', () => {
+                if (originalDevices.length <= 1 || isProgrammaticScroll) return;
+                isProgrammaticScroll = true;
+                setTimeout(() => isProgrammaticScroll = false, 400);
+                virtualCurrentIndex = (virtualCurrentIndex - 1 + CLONE_SETS * originalDevices.length) % (CLONE_SETS * originalDevices.length);
+                currentDeviceIndex = virtualCurrentIndex % originalDevices.length;
+                updateCarouselSelection(true, true);
+            });
+
+            async function loadDevices() {
+                try {
+                    const res = await absoluteFetch('/api/v1/jsplugin/miot/mina/devices');
+                    if (res && res.success && res.data) {
+                        originalDevices = [];
+                        res.data.forEach(account => {
+                            account.devices.forEach(device => {
+                                originalDevices.push({
+                                    aid: account.account_id,
+                                    did: device.deviceID,
+                                    name: device.alias || device.name,
+                                    presence: device.presence,
+                                    volume: device.volume || 0
+                                });
+                            });
+                        });
+                        if (originalDevices.length > 0) {
+                            const savedDid = localStorage.getItem('remote_caller_last_device');
+                            let targetIdx = savedDid ? originalDevices.findIndex(d => d.did === savedDid) : -1;
+                            if (targetIdx === -1) targetIdx = originalDevices.findIndex(d => d.presence === 'online');
+                            if(targetIdx !== -1) currentDeviceIndex = targetIdx;
+                            renderAllSpeakers();
+                        } else {
+                            renderAllSpeakers();
+                        }
+                    }
+                } catch (err) {
+                    if (err.status === 403 && err.payload && err.payload.detail === 'plugin_disabled') {
+                        deviceList.innerHTML = '<span style="color:var(--md-error); font-weight:bold; font-size:16px; margin:auto; text-align:center; line-height:1.5;">请先安装并启用<br>“智能音箱”插件</span>';
+                    } else {
+                        deviceList.innerHTML = '<span style="color:var(--md-error); font-weight:bold; font-size:18px; margin:auto;">加载失败</span>';
+                    }
+                }
+            }
+            loadDevices();
+
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (SpeechRecognition) {
+                recognition = new SpeechRecognition();
+                recognition.continuous = true;
+                recognition.interimResults = true;
+                recognition.lang = 'zh-CN';
+                recognition.onresult = (event) => {
+                    let interimTranscript = '';
+                    for (let i = event.resultIndex; i < event.results.length; ++i) {
+                        if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript;
+                        else interimTranscript += event.results[i][0].transcript;
+                    }
+                    ttsInput.value = finalTranscript + interimTranscript;
+                };
+            }
+
+            async function startRecording(e) {
+                if (e && e.type === 'touchstart') e.preventDefault();
+                if (!isHttps) return announce("由于浏览器限制，需要 HTTPS 才能使用话筒功能");
+                if (isRecording || !selectedDevice) return announce(selectedDevice ? "" : "当前音箱离线或未选择设备");
+
+                isRecording = true;
+                micWrapper.classList.add('recording');
+                micHint.textContent = '松开发送🚀';
+                cancelCountdown();
+
+                if (recognition) {
+                    finalTranscript = '';
+                    ttsInput.value = '';
+                    try { recognition.start(); } catch(e) {}
+                }
+                try {
+                    originalStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(originalStream);
+                    audioChunks = [];
+                    mediaRecorder.ondataavailable = e => { if(e.data.size > 0) audioChunks.push(e.data); };
+                    mediaRecorder.start();
+                } catch (err) {
+                    announce("无法访问麦克风");
+                }
+            }
+
+            // ===== 精简复用的麦克风硬件释放逻辑 =====
+            function releaseMicrophoneHardware() {
+                if (originalStream) {
+                    originalStream.getTracks().forEach(track => track.stop());
+                    originalStream = null;
+                }
+            }
+
+            function stopRecording(e) {
+                if (e && e.type === 'touchend') e.preventDefault();
+                if (!isRecording) return;
+                isRecording = false;
+                micWrapper.classList.remove('recording');
+                micHint.textContent = '按住说话';
+
+                if (recognition) try { recognition.stop(); } catch(e) {}
+
+                if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                    mediaRecorder.onstop = () => {
+                        recordedBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+                        checkAndTriggerSend();
+                        releaseMicrophoneHardware(); // 统一调用硬件释放
+                    };
+                    mediaRecorder.stop();
+                } else {
+                    checkAndTriggerSend();
+                    releaseMicrophoneHardware();
+                }
+            }
+
+            // 锁屏/切后台/退出的极简防御：仅 4 行实现
+            function handleInterrupt() {
+                if (isRecording) stopRecording();
+                else releaseMicrophoneHardware();
+            }
+            ['beforeunload', 'unload', 'pagehide', 'blur'].forEach(evt => window.addEventListener(evt, handleInterrupt));
+            document.addEventListener('visibilitychange', () => { if (document.hidden) handleInterrupt(); });
+            // ========================================================
+
+            function checkAndTriggerSend() {
+                if (autoDelayValue > 0 && (currentMode === 'tts' ? ttsInput.value.trim().length > 0 : !!recordedBlob)) {
+                    startCountdown(autoDelayValue);
+                }
+            }
+
+            micWrapper.addEventListener('touchstart', startRecording, { passive: false });
+            micWrapper.addEventListener('mousedown', (e) => { if (e.button === 0) startRecording(e); });
+            window.addEventListener('touchend', stopRecording);
+            window.addEventListener('touchcancel', stopRecording);
+            window.addEventListener('mouseup', stopRecording);
+
+            function restoreDelayUI() {
+                countdownBadge.classList.add('panel-hidden');
+                delayConfigWrap.classList.remove('panel-hidden');
+            }
+
+            function startCountdown(seconds) {
+                countdownValue = seconds;
+                countdownText.textContent = `取消发送 (${countdownValue.toFixed(1)}s)`;
+                delayConfigWrap.classList.add('panel-hidden');
+                countdownBadge.classList.remove('panel-hidden');
+                countdownTimer = setInterval(() => {
+                    countdownValue -= 0.1;
+                    if (countdownValue <= 0) {
+                        clearInterval(countdownTimer);
+                        restoreDelayUI();
+                        sendData();
+                    } else {
+                        countdownText.textContent = `取消发送 (${countdownValue.toFixed(1)}s)`;
+                    }
+                }, 100);
+            }
+
+            function cancelCountdown() {
+                if (countdownTimer) {
+                    clearInterval(countdownTimer);
+                    countdownTimer = null;
+                    announce("已取消发送");
+                }
+                restoreDelayUI();
+            }
+            countdownBadge.addEventListener('click', cancelCountdown);
+
+            async function sendData() {
+                if (!selectedDevice) return announce("当前音箱离线，无法发送");
+
+                try {
+                    await absoluteFetch('/api/v1/jsplugin/miot/mina/volume', 'POST', {
+                        account_id: selectedDevice.aid,
+                        device_id: selectedDevice.did,
+                        volume: parseInt(volumeSlider.value, 10)
+                    });
+                } catch (e) {}
+
+                const targetSpeaker = deviceList.querySelectorAll('.speaker-item')[virtualCurrentIndex];
+                if(targetSpeaker && !targetSpeaker.classList.contains('offline')) {
+                    carouselContainer.classList.add('playing');
+                    setTimeout(() => carouselContainer.classList.remove('playing'), 2500);
+                }
+
+                if (currentMode === 'tts') {
+                    const text = ttsInput.value.trim();
+                    if (!text) return;
+                    try {
+                        await absoluteFetch('/api/v1/jsplugin/miot/mina/tts', 'POST', {
+                            account_id: selectedDevice.aid,
+                            device_id: selectedDevice.did,
+                            text: text
+                        });
+                        announce("小爱语音指令已发送");
+                    } catch (e) { announce("发送失败"); }
+                } else {
+                    if (!recordedBlob) return announce("未录制声音");
+                    announce("音频处理中，请稍候...");
+                    const reader = new FileReader();
+                    reader.readAsDataURL(recordedBlob);
+                    reader.onloadend = async () => {
+                        try {
+
+                            const uploadRes = await absoluteFetch('/api/v1/jsplugin/remote-caller/upload', 'POST', {
+                                audio_base64: reader.result.split(',')[1]
+                            });
+                            if (!uploadRes || !uploadRes.success) return announce("录音上传失败");
+
+
+                            const token = getAuthToken();
+                            let noCacheUrl = window.location.origin + '/api/v1/jsplugin/remote-caller/static/voice.mp3?t=' + Date.now();
+
+                            await absoluteFetch('/api/v1/jsplugin/miot/mina/play-url', 'POST', {
+                                account_id: selectedDevice.aid,
+                                device_id: selectedDevice.did,
+                                url: noCacheUrl
+                            });
+                            announce("原音已发送");
+                        } catch (e) {
+                            announce("推送失败");
+                        }
+                    };
+                }
+            }
+
+            btnManualSend.addEventListener('click', () => { animateButtonFeedback(btnManualSend); cancelCountdown(); sendData(); });
+            btnResend.addEventListener('click', () => { animateButtonFeedback(btnResend); cancelCountdown(); sendData(); });
+            btnTest.addEventListener('click', () => {
+                animateButtonFeedback(btnTest);
+                if (recordedBlob) {
+                    audioPlayer.src = URL.createObjectURL(recordedBlob);
+                    audioPlayer.play();
+                } else { announce("没有可试听的录音"); }
+            });
+        });
+    </script>
+</body>
+</html>
