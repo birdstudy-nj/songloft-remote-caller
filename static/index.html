@@ -956,6 +956,7 @@
             }
             loadDevices();
 
+            // ====== 语音部分：提取自老版本逻辑，不中断麦克风 ======
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (SpeechRecognition) {
                 recognition = new SpeechRecognition();
@@ -987,8 +988,12 @@
                     ttsInput.value = '';
                     try { recognition.start(); } catch(e) {}
                 }
+
                 try {
-                    originalStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    // 全局保留流，如果尚未获取则请求（不切断、不重复请求）
+                    if (!originalStream) {
+                        originalStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    }
                     mediaRecorder = new MediaRecorder(originalStream);
                     audioChunks = [];
                     mediaRecorder.ondataavailable = e => { if(e.data.size > 0) audioChunks.push(e.data); };
@@ -998,17 +1003,10 @@
                 }
             }
 
-            // ===== 精简复用的麦克风硬件释放逻辑 =====
-            function releaseMicrophoneHardware() {
-                if (originalStream) {
-                    originalStream.getTracks().forEach(track => track.stop());
-                    originalStream = null;
-                }
-            }
-
             function stopRecording(e) {
                 if (e && e.type === 'touchend') e.preventDefault();
                 if (!isRecording) return;
+
                 isRecording = false;
                 micWrapper.classList.remove('recording');
                 micHint.textContent = '按住说话';
@@ -1019,23 +1017,13 @@
                     mediaRecorder.onstop = () => {
                         recordedBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
                         checkAndTriggerSend();
-                        releaseMicrophoneHardware(); // 统一调用硬件释放
                     };
                     mediaRecorder.stop();
+                    // 这里删除了原版的 track.stop()，实现“松开不退出麦克风”
                 } else {
                     checkAndTriggerSend();
-                    releaseMicrophoneHardware();
                 }
             }
-
-            // 锁屏/切后台/退出的极简防御：仅 4 行实现
-            function handleInterrupt() {
-                if (isRecording) stopRecording();
-                else releaseMicrophoneHardware();
-            }
-            ['beforeunload', 'unload', 'pagehide', 'blur'].forEach(evt => window.addEventListener(evt, handleInterrupt));
-            document.addEventListener('visibilitychange', () => { if (document.hidden) handleInterrupt(); });
-            // ========================================================
 
             function checkAndTriggerSend() {
                 if (autoDelayValue > 0 && (currentMode === 'tts' ? ttsInput.value.trim().length > 0 : !!recordedBlob)) {
@@ -1112,18 +1100,18 @@
                 } else {
                     if (!recordedBlob) return announce("未录制声音");
                     announce("音频处理中，请稍候...");
+
                     const reader = new FileReader();
                     reader.readAsDataURL(recordedBlob);
                     reader.onloadend = async () => {
                         try {
-
                             const uploadRes = await absoluteFetch('/api/v1/jsplugin/remote-caller/upload', 'POST', {
                                 audio_base64: reader.result.split(',')[1]
                             });
                             if (!uploadRes || !uploadRes.success) return announce("录音上传失败");
 
-
                             const token = getAuthToken();
+                            // 使用新的免密 /static/ 路径发送给小爱音箱
                             let noCacheUrl = window.location.origin + '/api/v1/jsplugin/remote-caller/static/voice.mp3?t=' + Date.now();
 
                             await absoluteFetch('/api/v1/jsplugin/miot/mina/play-url', 'POST', {
